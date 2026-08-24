@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Excalibur Center
+GenericName=Casper Excalibur Control Center
+Comment=Klavye RGB aydınlatması ve performans kontrolü (resmi olmayan)
+Exec=/usr/bin/excalibur-center
+Icon=excalibur-center
+Terminal=false
+Categories=System;HardwareSettings;Utility;
+Keywords=casper;excalibur;rgb;klavye;keyboard;led;fan;güç;
+StartupNotify=true

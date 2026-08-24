@@ -1,0 +1,152 @@
+/* Excalibur Center – dark theme */
+
+* {
+    font-family: "Ubuntu", "Noto Sans", sans-serif;
+}
+
+QMainWindow, QDialog {
+    background-color: #14161b;
+}
+
+QWidget#sidebar {
+    background-color: #0f1115;
+    border-right: 1px solid #23262e;
+}
+
+QPushButton#navButton {
+    text-align: left;
+    padding: 12px 18px;
+    border: none;
+    border-radius: 10px;
+    color: #9aa3b2;
+    font-size: 14px;
+    font-weight: 500;
+}
+QPushButton#navButton:hover {
+    background-color: #1a1d24;
+    color: #d7dbe4;
+}
+QPushButton#navButton:checked {
+    background-color: #2563eb;
+    color: #ffffff;
+    font-weight: 600;
+}
+
+QLabel#appTitle {
+    color: #ffffff;
+    font-size: 17px;
+    font-weight: 700;
+    padding: 18px 18px 6px 18px;
+}
+QLabel#appSubtitle {
+    color: #6b7383;
+    font-size: 11px;
+    padding: 0 18px 14px 18px;
+}
+
+QLabel#pageTitle {
+    color: #ffffff;
+    font-size: 21px;
+    font-weight: 700;
+}
+QLabel#pageDesc {
+    color: #8b93a4;
+    font-size: 13px;
+}
+
+QLabel#statusText {
+    color: #8b93a4;
+    font-size: 12px;
+    padding: 6px 14px;
+}
+
+QFrame#card {
+    background-color: #1a1d24;
+    border: 1px solid #262a33;
+    border-radius: 12px;
+}
+
+QLabel#cardTitle {
+    color: #e8ebf0;
+    font-size: 14px;
+    font-weight: 600;
+}
+QLabel#cardHint {
+    color: #767e8e;
+    font-size: 11px;
+}
+
+QPushButton {
+    background-color: #23262e;
+    color: #d7dbe4;
+    border: 1px solid #2c3039;
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-size: 13px;
+}
+QPushButton:hover { background-color: #2b2f39; }
+QPushButton:pressed { background-color: #20232b; }
+QPushButton:disabled { color: #565d6b; }
+
+QPushButton#accentButton {
+    background-color: #2563eb;
+    border: none;
+    color: white;
+    font-weight: 600;
+}
+QPushButton#accentButton:hover { background-color: #1d4fd8; }
+QPushButton#dangerButton {
+    background-color: transparent;
+    border: 1px solid #7f1d1d;
+    color: #f87171;
+}
+QPushButton#dangerButton:hover { background-color: #2a1518; }
+
+QPushButton#brightnessChip {
+    border-radius: 8px;
+    padding: 8px 16px;
+    min-width: 64px;
+}
+QPushButton#brightnessChip:checked {
+    background-color: #2563eb;
+    border-color: #2563eb;
+    color: white;
+    font-weight: 600;
+}
+
+QPushButton#planCard {
+    text-align: left;
+    padding: 14px;
+    border-radius: 12px;
+    background-color: #1a1d24;
+    border: 1px solid #262a33;
+}
+QPushButton#planCard:hover { border-color: #343a46; }
+QPushButton#planCard:checked {
+    background-color: #16223c;
+    border: 2px solid #2563eb;
+}
+
+QLineEdit {
+    background-color: #1a1d24;
+    color: #e8ebf0;
+    border: 1px solid #2c3039;
+    border-radius: 8px;
+    padding: 7px 10px;
+    font-size: 13px;
+}
+QLineEdit:focus { border-color: #2563eb; }
+
+QListWidget {
+    background-color: #1a1d24;
+    border: 1px solid #262a33;
+    border-radius: 10px;
+    padding: 4px;
+    color: #d7dbe4;
+    font-size: 13px;
+}
+QListWidget::item { padding: 9px 10px; border-radius: 6px; }
+QListWidget::item:selected { background-color: #2563eb; color: white; }
+QListWidget::item:hover:!selected { background-color: #22262f; }
+
+QStatusBar { background: transparent; color: #8b93a4; }

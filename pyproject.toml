@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "excalibur-center"
+version = "1.0.0"
+description = "Unofficial Control Center for Casper Excalibur laptops: keyboard RGB, power plans, fan monitoring"
+readme = "README.md"
+license = { text = "GPL-2.0-or-later" }
+requires-python = ">=3.10"
+dependencies = ["PyQt6>=6.5"]
+
+[project.gui-scripts]
+excalibur-center = "excalibur_center.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["excalibur_center*"]

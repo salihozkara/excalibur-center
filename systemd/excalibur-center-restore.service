@@ -1,0 +1,19 @@
+[Unit]
+Description=Excalibur Center - restore last lighting state at boot
+After=multi-user.target
+ConditionPathExists=/sys/class/leds/casper::kbd_backlight/led_control
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/excalibur-center --restore
+RemainAfterExit=yes
+StandardOutput=journal
+StandardError=journal
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/sys/class/leds/
+ProtectHome=read-only
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,91 @@
+#!/bin/bash
+# Privilege-separated write helper (invoked via pkexec).
+# Strict validation; writes only to the hard-coded hardware targets.
+
+set -euo pipefail
+
+if [[ $# -ne 2 ]]; then
+    echo "Kullanım: $0 <led|pwm> <deger>" >&2
+    exit 1
+fi
+
+TARGET_KIND="$1"
+VALUE="$2"
+
+case "$TARGET_KIND" in
+    led)
+        TARGET="/sys/class/leds/casper::kbd_backlight/led_control"
+        if [[ ! "$VALUE" =~ ^[3-6]0[0-2][0-9A-Fa-f]{6}$ ]]; then
+            echo "Hata: Geçersiz LED komutu: '$VALUE'" >&2
+            exit 2
+        fi
+        ;;
+    pwm)
+        TARGET=""
+        for name_file in /sys/class/hwmon/hwmon*/name; do
+            if [[ "$(cat "$name_file" 2>/dev/null)" == "casper_wmi" ]]; then
+                candidate="$(dirname "$name_file")/pwm1"
+                if [[ -e "$candidate" ]]; then
+                    TARGET="$candidate"
+                    break
+                fi
+            fi
+        done
+        if [[ -z "$TARGET" ]]; then
+            echo "Hata: casper_wmi pwm1 bulunamadı" >&2
+            exit 3
+        fi
+        if [[ ! "$VALUE" =~ ^[1-4]$ ]]; then
+            echo "Hata: Geçersiz güç planı: '$VALUE'" >&2
+            exit 2
+        fi
+        ;;
+    ledmc)
+        ZONE="${VALUE%%:*}"
+        REST="${VALUE#*:}"
+        COLOR="${REST%%:*}"
+        BRI="${REST##*:}"
+        case "$ZONE" in
+            left|middle|right) ;;
+            *)
+                echo "Hata: Geçersiz bölge: '$ZONE'" >&2
+                exit 2
+                ;;
+        esac
+        if [[ ! "$COLOR" =~ ^[0-9A-Fa-f]{6}$ || ! "$BRI" =~ ^[0-2]$ ]]; then
+            echo "Hata: Geçersiz renk/parlaklık" >&2
+            exit 2
+        fi
+        TARGET="/sys/class/leds/casper:rgb:kbd_zoned_backlight-$ZONE"
+        if [[ ! -d "$TARGET" ]]; then
+            echo "Hata: LED bulunamadı: $TARGET" >&2
+            exit 3
+        fi
+        printf '%d %d %d' "0x${COLOR:0:2}" "0x${COLOR:2:2}" "0x${COLOR:4:2}" > "$TARGET/multi_intensity"
+        printf '%s' "$BRI" > "$TARGET/brightness"
+        exit 0
+        ;;
+    profile)
+        TARGET="/sys/firmware/acpi/platform_profile"
+        case "$VALUE" in
+            performance|balanced-performance|balanced|low-power) ;;
+            *)
+                echo "Hata: Geçersiz profil: '$VALUE'" >&2
+                exit 2
+                ;;
+        esac
+        ;;
+    *)
+        echo "Hata: Bilinmeyen hedef: '$TARGET_KIND'" >&2
+        exit 1
+        ;;
+esac
+
+RESOLVED=$(readlink -f "$TARGET" 2>/dev/null || true)
+
+if [[ -z "$RESOLVED" || "$RESOLVED" != /sys/* || ! -e "$RESOLVED" ]]; then
+    echo "Hata: Hedef doğrulanamadı: $TARGET" >&2
+    exit 4
+fi
+
+printf '%s' "$VALUE" > "$RESOLVED"
