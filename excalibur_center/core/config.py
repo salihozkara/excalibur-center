@@ -121,13 +121,17 @@ def validate_led_path(path: str) -> str:
     return resolved
 
 
-def build_command(zone: Zone, brightness: int, color: RGBColor) -> str:
+def build_command(
+    zone: Zone, brightness: int, color: RGBColor, mode: int = 0x00
+) -> str:
     """Build the raw command written to led_control.
 
     Layout matches the driver's kstrtou64(base16) parsing:
-    high byte = zone id, then u32 data = (brightness << 24) | RRGGBB.
+    high byte = zone id, then u32 data = (led_mode | brightness) << 24 | RRGGBB.
+    ``mode`` carries the effect nibble (0x10 normal .. 0x70 ambilight).
     """
-    cmd = f"{int(zone):X}{int(brightness):02d}{color.to_hex()}"
+    data_byte = (mode | brightness) & 0xFF
+    cmd = f"{int(zone):X}{data_byte:02X}{color.to_hex()}"
     if not COMMAND_RE.match(cmd):
         raise ValueError(f"Komut doğrulanamadı: {cmd!r}")
     return cmd

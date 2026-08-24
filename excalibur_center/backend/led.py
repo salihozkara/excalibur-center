@@ -47,6 +47,17 @@ EFFECTS: dict[int, str] = {
 }
 EFFECT_CODES: dict[str, int] = {v: k for k, v in EFFECTS.items()}
 
+# raw arayüzde efekt nibble'ları (veri byte'ının üst 4 biti)
+EFFECT_MODES: dict[int, int] = {
+    1: 0x10,  # normal
+    2: 0x20,  # blink
+    3: 0x30,  # fade
+    4: 0x40,  # heartbeat
+    5: 0x50,  # repeat
+    6: 0x60,  # random
+    7: 0x70,  # ambilight
+}
+
 
 def _mcled_zone_path(zone: Zone) -> Path:
     return Path(MCLED_BASE) / f"casper:rgb:kbd_zoned_backlight-{MCLED_ZONE_NAMES[int(zone)]}"
@@ -101,6 +112,12 @@ class LEDBackend:
                 continue
             if bri in (int(Brightness.OFF), int(Brightness.MID), int(Brightness.MAX)):
                 self.state[int(zone)] = [bri, hex_color.upper()]
+        try:
+            effect = pm.get_last_effect()
+        except Exception:  # noqa: BLE001
+            effect = None
+        if effect in EFFECTS:
+            self.effect = effect
 
     @property
     def lights_on(self) -> bool:
@@ -193,7 +210,9 @@ class LEDBackend:
         if bri not in (Brightness.OFF, Brightness.MID, Brightness.MAX):
             raise LEDError(f"Geçersiz parlaklık: {bri}")
         if self.mode == "raw":
-            cmd = build_command(zone, bri, color)
+            cmd = build_command(
+                zone, bri, color, EFFECT_MODES.get(self.effect, 0x00)
+            )
             self._write_raw(cmd)
         else:
             self._write_mcled(zone, color, bri)
@@ -240,28 +259,38 @@ class LEDBackend:
             hex_color = self.state[int(zone)][1]
             self.apply_zone(zone, RGBColor.from_hex(hex_color), bri)
 
-    # ── effects (mcled only) ─────────────────────────────────
+    # ── effects ──────────────────────────────────────────────
     def get_effect(self) -> int | None:
-        if self.mode != "mcled":
-            return None
-        try:
-            value = int((_mcled_zone_path(Zone.LEFT) / "effect").read_text().strip())
-        except (OSError, ValueError):
-            return None
-        return value if value in EFFECTS else None
+        if self.mode == "mcled":
+            try:
+                value = int(
+                    (_mcled_zone_path(Zone.LEFT) / "effect").read_text().strip()
+                )
+            except (OSError, ValueError):
+                return None
+            return value if value in EFFECTS else None
+        # raw arayüzde okuma yok; bellek içi durumu döndür
+        return self.effect
 
     def set_effect(self, code: int) -> None:
         if code not in EFFECTS:
             raise LEDError(f"Geçersiz efekt: {code}")
-        if self.mode != "mcled":
-            raise LEDError("Efektler yalnızca multicolor LED arayüzünde desteklenir")
-        for zone in KEYBOARD_ZONES:
-            try:
-                (_mcled_zone_path(zone) / "effect").write_text(str(code))
-            except PermissionError as exc:
-                raise LEDError(
-                    "Efekt yazma izni yok; 'excalibur' grubuna üye olmalısın."
-                ) from exc
+        if self.mode == "mcled":
+            for zone in KEYBOARD_ZONES:
+                try:
+                    (_mcled_zone_path(zone) / "effect").write_text(str(code))
+                except PermissionError as exc:
+                    raise LEDError(
+                        "Efekt yazma izni yok; 'excalibur' grubuna üye olmalısın."
+                    ) from exc
+        else:
+            # raw: mevcut renk/parlaklıkla, mod nibble'ını taşıyan komut yaz
+            for zone in KEYBOARD_ZONES:
+                bri, hex_color = self.state[int(zone)]
+                cmd = build_command(
+                    zone, bri, RGBColor.from_hex(hex_color), EFFECT_MODES[code]
+                )
+                self._write_raw(cmd)
         self.effect = code
 
     # ── state helpers ────────────────────────────────────────

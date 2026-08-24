@@ -49,3 +49,15 @@ class TestBuildCommand:
         cmd = build_command(Zone.ALL, 9, RGBColor(255, 255, 255))
         assert cmd.startswith("609")
         assert len(cmd) == 9
+
+
+class TestEffectNibble:
+    def test_mode_carried_in_data_byte(self):
+        from excalibur_center.core.config import Brightness
+
+        cmd = build_command(Zone.ALL, Brightness.MAX, RGBColor(0, 255, 0), 0x20)
+        assert cmd == "62200FF00"  # 0x22 = blink(0x20) | brightness(2)
+
+    def test_normal_mode_nibble(self):
+        cmd = build_command(Zone.LEFT, Brightness.MID, RGBColor(255, 0, 0), 0x10)
+        assert cmd == "311FF0000"

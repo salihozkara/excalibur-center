@@ -100,5 +100,18 @@ class ProfileManager:
             return None, None
         return snap, data.get("profile_name")
 
-    def set_last_state(self, snapshot: dict, profile_name: str | None = None) -> None:
-        self._write(self.state_path, {"snapshot": snapshot, "profile_name": profile_name})
+    def get_last_effect(self) -> int | None:
+        data = self._read(self.state_path)
+        effect = data.get("effect")
+        return effect if isinstance(effect, int) else None
+
+    def set_last_state(
+        self,
+        snapshot: dict,
+        profile_name: str | None = None,
+        effect: int | None = None,
+    ) -> None:
+        data: dict = {"snapshot": snapshot, "profile_name": profile_name}
+        if effect is not None:
+            data["effect"] = effect
+        self._write(self.state_path, data)

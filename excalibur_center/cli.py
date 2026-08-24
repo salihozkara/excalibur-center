@@ -156,6 +156,9 @@ def _set_effect(effect_arg: str) -> int:
     led.set_effect(code)
     from .backend.led import EFFECTS
 
+    from .core.profiles import ProfileManager
+
+    ProfileManager().set_last_state(led.snapshot(), effect=code)
     print(f"Efekt: {EFFECTS[code]}")
     return 0
 

@@ -129,23 +129,22 @@ class LightingPage(QWidget):
         bri_row.addWidget(self.power_btn)
         root.addLayout(bri_row)
 
-        # ── effects (yalnızca multicolor arayüzde) ───────────
+        # ── effects ──────────────────────────────────────────
         self.effect_buttons: dict[int, QPushButton] = {}
-        if getattr(self.led, "mode", "") == "mcled":
-            eff_label = QLabel(t("lighting.effects"))
-            eff_label.setObjectName("cardTitle")
-            eff_row = QHBoxLayout()
-            eff_row.addWidget(eff_label)
-            eff_row.addSpacing(10)
-            for code in sorted(EFFECTS):
-                btn = QPushButton(t(EFFECT_KEYS[code]))
-                btn.setCheckable(True)
-                btn.setObjectName("brightnessChip")
-                btn.clicked.connect(lambda _=False, c=code: self.apply_effect(c))
-                self.effect_buttons[code] = btn
-                eff_row.addWidget(btn)
-            eff_row.addStretch()
-            root.addLayout(eff_row)
+        eff_label = QLabel(t("lighting.effects"))
+        eff_label.setObjectName("cardTitle")
+        eff_row = QHBoxLayout()
+        eff_row.addWidget(eff_label)
+        eff_row.addSpacing(10)
+        for code in sorted(EFFECTS):
+            btn = QPushButton(t(EFFECT_KEYS[code]))
+            btn.setCheckable(True)
+            btn.setObjectName("brightnessChip")
+            btn.clicked.connect(lambda _=False, c=code: self.apply_effect(c))
+            self.effect_buttons[code] = btn
+            eff_row.addWidget(btn)
+        eff_row.addStretch()
+        root.addLayout(eff_row)
 
         root.addStretch()
 
@@ -269,6 +268,7 @@ class LightingPage(QWidget):
         except Exception as exc:  # noqa: BLE001
             self.set_status("✖ " + t("status.effect_failed", error=str(exc)), error=True)
             return
+        self.pm.set_last_state(self.led.snapshot(), effect=code)
         self._sync_effects()
         self.set_status("✔ " + t("status.effect", name=t(EFFECT_KEYS[code])))
 
