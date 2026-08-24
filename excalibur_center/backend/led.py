@@ -55,7 +55,7 @@ def _mcled_zone_path(zone: Zone) -> Path:
 class LEDBackend:
     """Keeps an in-memory snapshot of zone states and applies changes."""
 
-    def __init__(self) -> None:
+    def __init__(self, load_state: bool = True) -> None:
         self._lock = threading.Lock()
         # zone code -> [brightness, "RRGGBB"]
         self.state: dict[int, list] = {
@@ -73,6 +73,34 @@ class LEDBackend:
             raise FileNotFoundError(
                 "Desteklenen LED arayüzü bulunamadı (led_control veya multicolor LED)"
             )
+
+        if load_state:
+            self._load_persisted_state()
+
+    def _load_persisted_state(self) -> None:
+        """Seed in-memory zone colors from the last saved state so that a
+        single-zone write never resets the other zones to defaults."""
+        mapping = {"left": Zone.LEFT, "center": Zone.CENTER, "right": Zone.RIGHT}
+        try:
+            from ..core.profiles import ProfileManager
+
+            snap, _ = ProfileManager().get_last_state()
+        except Exception:  # noqa: BLE001
+            return
+        if not isinstance(snap, dict):
+            return
+        for key, values in snap.items():
+            zone = mapping.get(key)
+            if zone is None or int(zone) not in self.state:
+                continue
+            try:
+                bri = int(values["brightness"])
+                hex_color = str(values["color"])
+                RGBColor.from_hex(hex_color)
+            except (KeyError, ValueError, TypeError):
+                continue
+            if bri in (int(Brightness.OFF), int(Brightness.MID), int(Brightness.MAX)):
+                self.state[int(zone)] = [bri, hex_color.upper()]
 
     @property
     def lights_on(self) -> bool:
@@ -169,7 +197,11 @@ class LEDBackend:
             self._write_raw(cmd)
         else:
             self._write_mcled(zone, color, bri)
-        self.state[int(zone)] = [bri, color.to_hex()]
+        if zone == Zone.ALL:
+            for z in KEYBOARD_ZONES:
+                self.state[int(z)] = [bri, color.to_hex()]
+        else:
+            self.state[int(zone)] = [bri, color.to_hex()]
         if bri != int(Brightness.OFF):
             self._last_on_brightness = bri
 
