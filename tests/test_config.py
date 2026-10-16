@@ -37,12 +37,17 @@ class TestBuildCommand:
         assert COMMAND_RE.match(cmd)
 
     def test_left_zone_orange_mid(self):
-        cmd = build_command(Zone.LEFT, Brightness.MID, RGBColor(255, 136, 0))
+        cmd = build_command(Zone(0x03), Brightness.MID, RGBColor(255, 136, 0))
         assert cmd == "301FF8800"
 
     def test_off_black(self):
-        cmd = build_command(Zone.RIGHT, Brightness.OFF, RGBColor(0, 0, 0))
+        cmd = build_command(Zone(0x05), Brightness.OFF, RGBColor(0, 0, 0))
         assert cmd == "500000000"
+
+    def test_corner_zone_green_max(self):
+        cmd = build_command(Zone.CORNER, Brightness.MAX, RGBColor(0, 255, 0))
+        assert cmd == "70200FF00"
+        assert COMMAND_RE.match(cmd)
 
     def test_invalid_brightness_rejected_by_backend_not_builder(self):
         # builder itself only checks shape; backend validates range
@@ -59,5 +64,34 @@ class TestEffectNibble:
         assert cmd == "62200FF00"  # 0x22 = blink(0x20) | brightness(2)
 
     def test_normal_mode_nibble(self):
-        cmd = build_command(Zone.LEFT, Brightness.MID, RGBColor(255, 0, 0), 0x10)
+        cmd = build_command(Zone(0x03), Brightness.MID, RGBColor(255, 0, 0), 0x10)
         assert cmd == "311FF0000"
+
+
+class TestLeftRightSwap:
+    def _dmi(self, product: str) -> str:
+        import tempfile
+
+        fd = tempfile.NamedTemporaryFile("w", suffix="product_name", delete=False)
+        fd.write(product + "\n")
+        fd.close()
+        return fd.name
+
+    def test_g900_is_swapped(self):
+        from excalibur_center.core.config import keyboard_lr_swapped
+
+        assert keyboard_lr_swapped(self._dmi("EXCALIBUR G900"))
+
+    def test_other_models_are_not_swapped(self):
+        from excalibur_center.core.config import keyboard_lr_swapped
+
+        assert not keyboard_lr_swapped(self._dmi("EXCALIBUR G770"))
+
+    def test_missing_dmi_is_not_swapped(self):
+        from excalibur_center.core.config import keyboard_lr_swapped
+
+        assert not keyboard_lr_swapped("/nonexistent/product_name")
+
+    def test_sides_are_distinct_hardware_ids(self):
+        assert {int(Zone.LEFT), int(Zone.RIGHT)} == {0x03, 0x05}
+        assert int(Zone.CENTER) == 0x04

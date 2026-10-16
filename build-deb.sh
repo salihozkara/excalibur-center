@@ -27,7 +27,7 @@ Maintainer: SALİH ÖZKARA <58659931+salihozkara@users.noreply.github.com>
 Description: Unofficial Control Center for Casper Excalibur laptops
  Keyboard RGB zone lighting, power plans and fan monitoring for
  Casper Excalibur laptops via the casper-wmi kernel interface.
- Includes DKMS-built casper-wmi driver (v1.1.0 fork with G770 fixes).
+ Includes DKMS-built casper-wmi driver (v1.2.0 fork: G770 fixes, corner LEDs).
 Homepage: https://github.com/salihozkara/excalibur-center
 EOF
 
@@ -37,14 +37,14 @@ set -e
 KVER="$(uname -r)"
 
 # DKMS modülü (başlıklar varsa)
-if [ -d "/usr/src/casper-wmi-1.1.0" ]; then
+if [ -d "/usr/src/casper-wmi-1.2.0" ]; then
     if [ -d "/lib/modules/$KVER/build" ]; then
-        dkms add -m casper-wmi -v 1.1.0 >/dev/null 2>&1 || true
-        dkms build -m casper-wmi -v 1.1.0 >/dev/null 2>&1 && \
-        dkms install -m casper-wmi -v 1.1.0 >/dev/null 2>&1 || \
+        dkms add -m casper-wmi -v 1.2.0 >/dev/null 2>&1 || true
+        dkms build -m casper-wmi -v 1.2.0 >/dev/null 2>&1 && \
+        dkms install -m casper-wmi -v 1.2.0 >/dev/null 2>&1 || \
             echo "UYARI: DKMS derlemesi başarısız (linux-headers-$KVER gerekli)." >&2
     else
-        echo "UYARI: linux-headers-$KVER yok; kurup 'sudo dkms install casper-wmi/1.1.0' çalıştırın." >&2
+        echo "UYARI: linux-headers-$KVER yok; kurup 'sudo dkms install casper-wmi/1.2.0' çalıştırın." >&2
     fi
 fi
 
@@ -85,7 +85,7 @@ EOF
 cat > "$BUILD/$PKG/DEBIAN/postrm" <<'EOF'
 #!/bin/bash
 set -e
-dkms remove casper-wmi/1.1.0 --all >/dev/null 2>&1 || true
+dkms remove casper-wmi/1.2.0 --all >/dev/null 2>&1 || true
 rm -f /etc/modules-load.d/excalibur-center.conf
 depmod -a 2>/dev/null || true
 exit 0
@@ -105,7 +105,7 @@ mkdir -p "$BUILD/$PKG/usr/bin" \
          "$BUILD/$PKG/usr/share/polkit-1/actions" \
          "$BUILD/$PKG/usr/lib/udev/rules.d" \
          "$BUILD/$PKG/lib/systemd/system" \
-         "$BUILD/$PKG/usr/src/casper-wmi-1.1.0"
+         "$BUILD/$PKG/usr/src/casper-wmi-1.2.0"
 
 cat > "$BUILD/$PKG/usr/bin/excalibur-center" <<'EOF'
 #!/bin/bash
@@ -121,7 +121,7 @@ install -m644 "$REPO/data/99-excalibur-center.rules" "$BUILD/$PKG/usr/lib/udev/r
 install -m644 "$REPO/systemd/excalibur-center-restore.service" "$BUILD/$PKG/lib/systemd/system/"
 
 cp "$REPO/driver/casper-wmi.c" "$REPO/driver/Makefile" "$REPO/driver/dkms.conf" \
-   "$BUILD/$PKG/usr/src/casper-wmi-1.1.0/"
+   "$BUILD/$PKG/usr/src/casper-wmi-1.2.0/"
 
 # İkonlar
 for size in 512 256 128 64 48 32 16; do

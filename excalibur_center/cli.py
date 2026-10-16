@@ -6,6 +6,7 @@ Usage:
   excalibur-center --status            print current state
   excalibur-center --set-led ZONE HEX [BRIGHTNESS]
                                        apply color to a zone now
+                                       (left/center/right/all/corner)
   excalibur-center --set-plan NAME     set power plan
   excalibur-center --lang en|tr        set UI language
 """
@@ -65,7 +66,8 @@ def _status() -> int:
         print(t("cli.no_state"))
     else:
         print(t("cli.lights"))
-        zone_keys = {"left": "zone.left", "center": "zone.center", "right": "zone.right"}
+        zone_keys = {"left": "zone.left", "center": "zone.center", "right": "zone.right",
+                     "corner": "zone.corner"}
         bri_keys = {int(Brightness.OFF): "bri.off", int(Brightness.MID): "bri.mid",
                     int(Brightness.MAX): "bri.max"}
         for key, values in snapshot.items():
@@ -173,7 +175,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--restore", action="store_true", help="re-apply last state")
     parser.add_argument("--status", action="store_true", help="print current state")
     parser.add_argument("--set-led", nargs="+", metavar=("ZONE", "HEX"),
-                        help="e.g.: all FF8800 [2]")
+                        help="e.g.: all FF8800 [2], corner 00FF00")
     parser.add_argument("--brightness", type=int, choices=(0, 1, 2), default=None)
     parser.add_argument("--set-plan", metavar="PLAN",
                         help="highpower / gaming / textmode / lowpower or 1-4")

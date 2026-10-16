@@ -71,7 +71,17 @@ class KeyboardPreview(QWidget):
         plate = QPainterPath()
         plate.addRoundedRect(area, 12, 12)
         painter.fillPath(plate, QColor("#101218"))
-        painter.setPen(QPen(QColor("#23262e"), 1))
+        corner = self._colors.get(int(Zone.CORNER))
+        if corner is not None and corner[1] != int(Brightness.OFF):
+            # corner/edge LED strip drawn as a glowing rim around the deck
+            base = QColor(f"#{corner[0]}")
+            factor = BRIGHTNESS_FACTOR.get(corner[1], 1.0)
+            rim = QColor(int(base.red() * factor),
+                         int(base.green() * factor),
+                         int(base.blue() * factor))
+            painter.setPen(QPen(rim, 3))
+        else:
+            painter.setPen(QPen(QColor("#23262e"), 1))
         painter.drawPath(plate)
 
         rows = len(_ROWS)
@@ -80,7 +90,7 @@ class KeyboardPreview(QWidget):
         key_font = QFont(self.font())
         key_font.setPixelSize(max(8, int(row_h * 0.28)))
 
-        zone_rects: dict[int, list[QRectF]] = {3: [], 4: [], 5: []}
+        zone_rects: dict[int, list[QRectF]] = {int(z): [] for z in (Zone.LEFT, Zone.CENTER, Zone.RIGHT)}
 
         for r, row in enumerate(_ROWS):
             total_units = sum(_WIDE.get(k, 1.0) for k in row)

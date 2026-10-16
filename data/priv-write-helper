@@ -15,7 +15,8 @@ VALUE="$2"
 case "$TARGET_KIND" in
     led)
         TARGET="/sys/class/leds/casper::kbd_backlight/led_control"
-        if [[ ! "$VALUE" =~ ^[3-6]0[0-2][0-9A-Fa-f]{6}$ ]]; then
+        # zone 3-7, effect nibble 0-7, brightness 0-2, RRGGBB
+        if [[ ! "$VALUE" =~ ^[3-7][0-7][0-2][0-9A-Fa-f]{6}$ ]]; then
             echo "Hata: Geçersiz LED komutu: '$VALUE'" >&2
             exit 2
         fi
@@ -46,7 +47,8 @@ case "$TARGET_KIND" in
         COLOR="${REST%%:*}"
         BRI="${REST##*:}"
         case "$ZONE" in
-            left|middle|right) ;;
+            left|middle|right) TARGET="/sys/class/leds/casper:rgb:kbd_zoned_backlight-$ZONE" ;;
+            corner) TARGET="/sys/class/leds/casper::corner_backlight" ;;
             *)
                 echo "Hata: Geçersiz bölge: '$ZONE'" >&2
                 exit 2
@@ -56,7 +58,6 @@ case "$TARGET_KIND" in
             echo "Hata: Geçersiz renk/parlaklık" >&2
             exit 2
         fi
-        TARGET="/sys/class/leds/casper:rgb:kbd_zoned_backlight-$ZONE"
         if [[ ! -d "$TARGET" ]]; then
             echo "Hata: LED bulunamadı: $TARGET" >&2
             exit 3

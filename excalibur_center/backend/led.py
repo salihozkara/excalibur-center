@@ -8,16 +8,25 @@ Two casper-wmi driver generations are supported:
               (``casper:rgb:kbd_zoned_backlight-*``, multicolor interface).
 
 The backend auto-detects whichever interface is present.
+
+Corner/edge LEDs (zone 0x07) are driven through ``casper::corner_backlight``
+when the driver exposes it, otherwise through zone 7 of ``led_control``.
+They are on/off only: the EC turns them off for any brightness below 2 and,
+while off, swallows the first command as a wake-up, so switching them on
+takes two commands at least ~100 ms apart.
 """
 
 from __future__ import annotations
 
 import logging
+import subprocess
 import threading
+import time
 from pathlib import Path
 
 from ..core.config import (
     Brightness,
+    CORNER_LED_PATH,
     KEYBOARD_ZONES,
     LED_CONTROL_PATH,
     MCLED_ZONE_NAMES,
@@ -85,17 +94,24 @@ class LEDBackend:
                 "Desteklenen LED arayüzü bulunamadı (led_control veya multicolor LED)"
             )
 
+        if self.has_corner:
+            self.state[int(Zone.CORNER)] = [int(Brightness.MAX), "FFFFFF"]
+
         if load_state:
             self._load_persisted_state()
 
     def _load_persisted_state(self) -> None:
         """Seed in-memory zone colors from the last saved state so that a
         single-zone write never resets the other zones to defaults."""
-        mapping = {"left": Zone.LEFT, "center": Zone.CENTER, "right": Zone.RIGHT}
+        mapping = {
+            "left": Zone.LEFT, "center": Zone.CENTER, "right": Zone.RIGHT,
+            "corner": Zone.CORNER,
+        }
         try:
             from ..core.profiles import ProfileManager
 
-            snap, _ = ProfileManager().get_last_state()
+            pm = ProfileManager()
+            snap, _ = pm.get_last_state()
         except Exception:  # noqa: BLE001
             return
         if not isinstance(snap, dict):
@@ -112,12 +128,25 @@ class LEDBackend:
                 continue
             if bri in (int(Brightness.OFF), int(Brightness.MID), int(Brightness.MAX)):
                 self.state[int(zone)] = [bri, hex_color.upper()]
+        corner = self.state.get(int(Zone.CORNER))
+        if corner is not None and corner[0] != int(Brightness.OFF):
+            corner[0] = int(Brightness.MAX)  # on/off only
         try:
             effect = pm.get_last_effect()
         except Exception:  # noqa: BLE001
             effect = None
         if effect in EFFECTS:
             self.effect = effect
+
+    @property
+    def has_corner(self) -> bool:
+        """Corner LEDs are reachable via their class device or led_control."""
+        return self.mode == "raw" or Path(CORNER_LED_PATH).is_dir()
+
+    @property
+    def corner_on(self) -> bool:
+        entry = self.state.get(int(Zone.CORNER))
+        return entry is not None and entry[0] != int(Brightness.OFF)
 
     @property
     def lights_on(self) -> bool:
@@ -190,6 +219,31 @@ class LEDBackend:
         if result.returncode != 0:
             raise LEDError(f"Yardımcı betik başarısız: {result.stderr.strip()}")
 
+    # ── low level: corner leds ───────────────────────────────
+    CORNER_WAKE_DELAY = 0.15
+
+    def _write_corner(self, color: RGBColor, on: bool) -> None:
+        base = Path(CORNER_LED_PATH)
+        if base.is_dir():
+            # the driver handles the wake-up double write itself
+            try:
+                (base / "multi_intensity").write_text(f"{color.r} {color.g} {color.b}")
+                (base / "brightness").write_text("1" if on else "0")
+            except PermissionError:
+                logger.info("Doğrudan yazma reddedildi, polkit kullanılıyor")
+                self._helper_write_mcled("corner", color, 1 if on else 0)
+        elif self.mode == "raw":
+            # older drivers: zone 7 through led_control, no effect nibble;
+            # the state is unknown here, so always wake the leds when on
+            bri = Brightness.MAX if on else Brightness.OFF
+            cmd = build_command(Zone.CORNER, bri, color)
+            self._write_raw(cmd)
+            if on:
+                time.sleep(self.CORNER_WAKE_DELAY)
+                self._write_raw(cmd)
+        else:
+            raise LEDError("Köşe LED arayüzü bulunamadı")
+
     # ── public API ───────────────────────────────────────────
     def _effective_brightness(self, zone: Zone, brightness: int | None) -> int:
         if brightness is not None:
@@ -209,6 +263,12 @@ class LEDBackend:
         bri = self._effective_brightness(zone, brightness)
         if bri not in (Brightness.OFF, Brightness.MID, Brightness.MAX):
             raise LEDError(f"Geçersiz parlaklık: {bri}")
+        if zone == Zone.CORNER:
+            on = bri != int(Brightness.OFF)
+            self._write_corner(color, on)
+            self.state[int(zone)] = [int(Brightness.MAX) if on else int(Brightness.OFF),
+                                     color.to_hex()]
+            return
         if self.mode == "raw":
             cmd = build_command(
                 zone, bri, color, EFFECT_MODES.get(self.effect, 0x00)
@@ -259,6 +319,14 @@ class LEDBackend:
             hex_color = self.state[int(zone)][1]
             self.apply_zone(zone, RGBColor.from_hex(hex_color), bri)
 
+    def set_corner(self, on: bool) -> None:
+        """Switch the corner LEDs off, or back on with the last colour."""
+        if int(Zone.CORNER) not in self.state:
+            raise LEDError("Köşe LED arayüzü bulunamadı")
+        hex_color = self.state[int(Zone.CORNER)][1]
+        bri = int(Brightness.MAX) if on else int(Brightness.OFF)
+        self.apply_zone(Zone.CORNER, RGBColor.from_hex(hex_color), bri)
+
     # ── effects ──────────────────────────────────────────────
     def get_effect(self) -> int | None:
         if self.mode == "mcled":
@@ -301,14 +369,19 @@ class LEDBackend:
                 (Zone.LEFT, "left"),
                 (Zone.CENTER, "center"),
                 (Zone.RIGHT, "right"),
+                (Zone.CORNER, "corner"),
             )
+            if int(code) in self.state
         }
 
     def restore_snapshot(self, snap: dict[str, dict[str, int | str]]) -> None:
-        mapping = {"left": Zone.LEFT, "center": Zone.CENTER, "right": Zone.RIGHT}
+        mapping = {
+            "left": Zone.LEFT, "center": Zone.CENTER, "right": Zone.RIGHT,
+            "corner": Zone.CORNER,
+        }
         for key, values in snap.items():
             zone = mapping.get(key)
-            if zone is None:
+            if zone is None or (zone == Zone.CORNER and not self.has_corner):
                 continue
             try:
                 color = RGBColor.from_hex(str(values["color"]))

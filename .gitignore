@@ -12,3 +12,12 @@ docs/screenshot.png~
 *.tar.gz
 .idea/
 .vscode/
+# kernel module build output (driver/)
+driver/*.o
+driver/*.ko
+driver/*.mod
+driver/*.mod.c
+driver/.*.cmd
+driver/.module-common.o
+driver/Module.symvers
+driver/modules.order

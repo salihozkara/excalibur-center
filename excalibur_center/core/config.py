@@ -14,6 +14,9 @@ from typing import Final
 
 LED_CONTROL_PATH: Final[str] = "/sys/class/leds/casper::kbd_backlight/led_control"
 
+# corner/edge LEDs as a multicolor LED class device (casper-wmi fork >= 1.2.0)
+CORNER_LED_PATH: Final[str] = "/sys/class/leds/casper::corner_backlight"
+
 HELPER_SCRIPT_PATH: Final[str] = "/usr/lib/excalibur-center/priv-write-helper"
 
 POLKIT_ACTION: Final[str] = "org.excalibur.center.priv-write"
@@ -21,13 +24,37 @@ POLKIT_ACTION: Final[str] = "org.excalibur.center.priv-write"
 APP_CONFIG_DIR: Final[Path] = Path.home() / ".config" / "excalibur-center"
 
 
-class Zone(IntEnum):
-    """Keyboard LED zones as defined in the casper-wmi kernel module."""
+DMI_PRODUCT_PATH: Final[str] = "/sys/class/dmi/id/product_name"
 
-    LEFT = 0x03
+# Models whose EC drives the physical right side with zone 0x03 and the left
+# side with 0x05 (verified on an EXCALIBUR G900 / EX900G, BIOS CP171).
+LR_SWAPPED_MODELS: Final[frozenset[str]] = frozenset({"EXCALIBUR G900"})
+
+
+def keyboard_lr_swapped(dmi_path: str = DMI_PRODUCT_PATH) -> bool:
+    """True when this laptop's left/right keyboard zones are mirrored."""
+    try:
+        product = Path(dmi_path).read_text(encoding="ascii", errors="replace").strip()
+    except OSError:
+        return False
+    return product in LR_SWAPPED_MODELS
+
+
+_ZONE_LEFT, _ZONE_RIGHT = (0x05, 0x03) if keyboard_lr_swapped() else (0x03, 0x05)
+
+
+class Zone(IntEnum):
+    """LED zones as defined in the casper-wmi kernel module.
+
+    LEFT/RIGHT name the physical side; their hardware ids are swapped on the
+    models in LR_SWAPPED_MODELS.
+    """
+
+    LEFT = _ZONE_LEFT
     CENTER = 0x04
-    RIGHT = 0x05
+    RIGHT = _ZONE_RIGHT
     ALL = 0x06
+    CORNER = 0x07
 
 
 ZONE_LABELS: Final[dict[str, Zone]] = {
@@ -38,6 +65,8 @@ ZONE_LABELS: Final[dict[str, Zone]] = {
     "sag": Zone.RIGHT,
     "all": Zone.ALL,
     "tumu": Zone.ALL,
+    "corner": Zone.CORNER,
+    "kose": Zone.CORNER,
 }
 
 ZONE_NAMES: Final[dict[int, str]] = {
@@ -45,6 +74,7 @@ ZONE_NAMES: Final[dict[int, str]] = {
     Zone.CENTER: "Orta",
     Zone.RIGHT: "Sağ",
     Zone.ALL: "Tümü",
+    Zone.CORNER: "Köşe",
 }
 
 KEYBOARD_ZONES: Final[tuple[Zone, ...]] = (Zone.LEFT, Zone.CENTER, Zone.RIGHT)

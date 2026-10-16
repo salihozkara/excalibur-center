@@ -1,3 +1,5 @@
 # Grant the logged-in user write access to the keyboard LED control file
 # so colour changes never require root or pkexec.
 SUBSYSTEM=="leds", KERNEL=="casper::kbd_backlight", RUN+="/usr/bin/chgrp video /sys/class/leds/casper::kbd_backlight/led_control", RUN+="/usr/bin/chmod 0660 /sys/class/leds/casper::kbd_backlight/led_control"
+# Same for the corner/edge LEDs (casper::corner_backlight, zone 0x07).
+SUBSYSTEM=="leds", KERNEL=="casper::corner_backlight", RUN+="/usr/bin/chgrp video /sys/class/leds/casper::corner_backlight/brightness /sys/class/leds/casper::corner_backlight/multi_intensity", RUN+="/usr/bin/chmod 0660 /sys/class/leds/casper::corner_backlight/brightness /sys/class/leds/casper::corner_backlight/multi_intensity"

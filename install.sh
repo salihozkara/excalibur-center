@@ -49,20 +49,27 @@ fi
 ok "Bağımlılıklar hazır."
 
 # ── 2. casper-wmi çekirdek modülü (DKMS) ─────────────────────
-DRIVER_VER="1.1.0"
+DRIVER_VER="1.2.0"
 SRC="/usr/src/casper-wmi-${DRIVER_VER}"
 
-if lsmod | grep -q '^casper_wmi '; then
+# /proc/modules, not 'lsmod | grep -q': under pipefail lsmod gets SIGPIPE
+if grep -q '^casper_wmi ' /proc/modules; then
     info "Yüklü modül kaldırılıyor (yeni sürüm kurulacak)..."
     sudo rmmod casper_wmi 2>/dev/null || \
         fail "casper_wmi kaldırılamadı. Diğer pencereleri kapatıp tekrar dene."
 fi
 
-if [[ -d /usr/src/casper-wmi-1.0.0 ]]; then
-    info "Eski DKMS kaydı temizleniyor..."
-    sudo dkms remove casper-wmi/1.0.0 --all >/dev/null 2>&1 || true
-    sudo rm -rf /usr/src/casper-wmi-1.0.0
-fi
+for old_ver in 1.0.0 1.1.0; do
+    if [[ -d /usr/src/casper-wmi-${old_ver} ]]; then
+        info "Eski DKMS kaydı temizleniyor (${old_ver})..."
+        sudo dkms remove "casper-wmi/${old_ver}" --all >/dev/null 2>&1 || true
+        sudo rm -rf "/usr/src/casper-wmi-${old_ver}"
+    fi
+done
+
+# Drop a previous registration of the same version too, otherwise DKMS
+# reports "already built/installed" and keeps the old module.
+sudo dkms remove "casper-wmi/${DRIVER_VER}" --all >/dev/null 2>&1 || true
 
 info "casper-wmi ${DRIVER_VER} kuruluyor..."
 sudo mkdir -p "$SRC"

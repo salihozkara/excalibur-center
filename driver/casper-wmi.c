@@ -11,16 +11,24 @@
  *     The fan read path dereferenced a static pointer that was only set
  *     by dmi_matched(); on unmatched systems any read of fan*_input
  *     crashed the kernel task reading it.
- *   - Add EXCALIBUR G770 and a generic CASPER fallback to the DMI table.
+ *   - Add EXCALIBUR G770 to the DMI table; unlisted models fall back to
+ *     raw fan speed values instead of crashing.
  *   - Declare HWMON_PWM_INPUT so that the power plan is actually
  *     exposed as pwm1 in sysfs (the write handler existed but was
  *     unreachable because only HWMON_PWM_MODE was declared).
+ *
+ * Fork changes (v1.2.0):
+ *   - Expose the corner/edge LEDs (zone 0x07) as their own multicolor LED
+ *     class device, casper::corner_backlight, and keep its state in sync
+ *     with zone 7 writes made through led_control.
+ *   - Match EXCALIBUR G900 regardless of BIOS version (CP171 verified).
  *
  * GPL-2.0-or-later, same as upstream.
  */
 
 #include <linux/acpi.h>
 #include <linux/leds.h>
+#include <linux/led-class-multicolor.h>
 #include <linux/slab.h>
 #include <linux/module.h>
 #include <linux/wmi.h>
@@ -30,12 +38,14 @@
 #include <linux/sysfs.h>
 #include <linux/types.h>
 #include <linux/dmi.h>
+#include <linux/delay.h>
+#include <linux/mutex.h>
 #include <acpi/acexcep.h>
 
 MODULE_AUTHOR("Mustafa Ekşi <mustafa.eskieksi@gmail.com>");
 MODULE_DESCRIPTION("Casper Excalibur Laptop WMI driver");
 MODULE_LICENSE("GPL");
-MODULE_VERSION("1.1.0");
+MODULE_VERSION("1.2.0");
 
 #define CASPER_WMI_GUID "644C5791-B7B0-4123-A90B-E93876E0DAAD"
 
@@ -64,6 +74,7 @@ struct casper_wmi_args {
 
 static u32 last_keyboard_led_change[3] = {0x02FFFFFF, 0x02FFFFFF, 0x02FFFFFF};
 static u32 last_keyboard_led_zone;
+static u32 last_corner_led_change = 0x02FFFFFF;
 
 static bool has_raw_fanspeed = true;
 static bool no_raw_fanspeed = false;
@@ -123,9 +134,9 @@ static const struct dmi_system_id casper_dmi_list[] = {
 	 .ident = "CASPER EXCALIBUR G900",
 	 .matches = {
 		     DMI_MATCH(DMI_SYS_VENDOR, "CASPER BILGISAYAR SISTEMLERI"),
-		     DMI_MATCH(DMI_PRODUCT_NAME, "EXCALIBUR G900"),
-		     DMI_MATCH(DMI_BIOS_VERSION, "CP131")
+		     DMI_MATCH(DMI_PRODUCT_NAME, "EXCALIBUR G900")
 		     },
+	 /* Verified on hardware with BIOS CP171: EC reports big-endian fan speed. */
 	 .driver_data = &no_raw_fanspeed,
 	},
 	{ }
@@ -147,6 +158,98 @@ static acpi_status casper_set(u16 a1, u32 zone_id, u32 data)
 		&wmi_args
 	};
 	return wmi_set_block(CASPER_WMI_GUID, 0, &input);
+}
+
+// CORNER LEDS PART v
+
+static struct mc_subled casper_corner_subleds[3] = {
+	{ .color_index = LED_COLOR_ID_RED, .intensity = 0xFF, .channel = 0 },
+	{ .color_index = LED_COLOR_ID_GREEN, .intensity = 0xFF, .channel = 1 },
+	{ .color_index = LED_COLOR_ID_BLUE, .intensity = 0xFF, .channel = 2 },
+};
+
+/*
+ * Behaviour observed on an EXCALIBUR G900 (BIOS reports "EXCALIBUR G900"):
+ *  - the corner leds are on/off only; any EC brightness below 2 turns them off,
+ *  - while they are off the EC swallows the first command as a wake-up and
+ *    only applies a second one that arrives at least ~100ms later.
+ * So the class device exposes max_brightness = 1 (mapped to EC brightness 2)
+ * and an off -> on transition sends the command twice with a pause in between.
+ */
+#define CASPER_CORNER_EC_ON 0x02
+#define CASPER_CORNER_WAKE_MS 150
+
+static DEFINE_MUTEX(casper_corner_lock);
+// false also means "unknown", e.g. right after loading or after a raw write.
+static bool casper_corner_hw_on;
+
+/*
+ * The EC has its own brightness field (bits 24-27), so the raw intensities
+ * are sent as they are instead of being scaled by led_mc_calc_color_components().
+ * The effect nibble (bits 28-31) of the last write is preserved.
+ */
+static int set_casper_corner_brightness(struct led_classdev *led_cdev,
+					enum led_brightness brightness)
+{
+	struct led_classdev_mc *mc_cdev = lcdev_to_mccdev(led_cdev);
+	acpi_status ret;
+	u32 data;
+
+	data = (last_corner_led_change & 0xF0000000) |
+	       ((brightness ? CASPER_CORNER_EC_ON : 0) << 24) |
+	       ((mc_cdev->subled_info[0].intensity & 0xFF) << 16) |
+	       ((mc_cdev->subled_info[1].intensity & 0xFF) << 8) |
+	       (mc_cdev->subled_info[2].intensity & 0xFF);
+
+	mutex_lock(&casper_corner_lock);
+	ret = casper_set(CASPER_SET_LED, CASPER_CORNER_LEDS, data);
+	if (ACPI_SUCCESS(ret) && brightness && !casper_corner_hw_on) {
+		msleep(CASPER_CORNER_WAKE_MS);
+		ret = casper_set(CASPER_SET_LED, CASPER_CORNER_LEDS, data);
+	}
+	if (ACPI_FAILURE(ret)) {
+		casper_corner_hw_on = false;
+		mutex_unlock(&casper_corner_lock);
+		dev_err(led_cdev->dev,
+			"Couldn't set corner leds acpi status: %d\n", ret);
+		return -EIO;
+	}
+	last_corner_led_change = data;
+	casper_corner_hw_on = brightness != 0;
+	mutex_unlock(&casper_corner_lock);
+	return 0;
+}
+
+static struct led_classdev_mc casper_corner_led = {
+	.led_cdev = {
+		.name = "casper::corner_backlight",
+		.brightness = 1,
+		.max_brightness = 1,
+		.brightness_set_blocking = set_casper_corner_brightness,
+	},
+	.num_colors = ARRAY_SIZE(casper_corner_subleds),
+	.subled_info = casper_corner_subleds,
+};
+
+/*
+ * Keep casper::corner_backlight in sync when zone 7 is written through
+ * led_control, so reading brightness/multi_intensity reflects the last write.
+ * A raw write may have been swallowed by the EC, so the hardware state is
+ * marked unknown and the next class device write wakes the leds again.
+ */
+static void casper_corner_led_update(u32 data)
+{
+	u32 brightness = (data & 0x0F000000) >> 24;
+
+	mutex_lock(&casper_corner_lock);
+	last_corner_led_change = data;
+	casper_corner_hw_on = false;
+	casper_corner_subleds[0].intensity = (data >> 16) & 0xFF;
+	casper_corner_subleds[1].intensity = (data >> 8) & 0xFF;
+	casper_corner_subleds[2].intensity = data & 0xFF;
+	casper_corner_led.led_cdev.brightness =
+	    brightness >= CASPER_CORNER_EC_ON ? 1 : 0;
+	mutex_unlock(&casper_corner_lock);
 }
 
 static ssize_t led_control_show(struct device *dev, struct device_attribute
@@ -175,7 +278,9 @@ static ssize_t led_control_store(struct device *dev, struct device_attribute
 		dev_err(dev, "casper-wmi ACPI status: %d\n", ret);
 		return ret;
 	}
-	if (led_zone != 7) {
+	if (led_zone == CASPER_CORNER_LEDS) {
+		casper_corner_led_update((u32) (tmp & 0xFFFFFFFF));
+	} else {
 		if (led_zone == CASPER_ALL_KEYBOARD_LEDS) {
 			last_keyboard_led_change[0] = (u32) (tmp & 0xFFFFFFFF);
 			last_keyboard_led_change[1] = (u32) (tmp & 0xFFFFFFFF);
@@ -216,7 +321,7 @@ static void set_casper_backlight_brightness(struct led_classdev *led_cdev,
 	}
 }
 
-// Corner leds' brightness can be different from keyboard leds' but this is discarded.
+// Corner leds have their own class device (casper::corner_backlight).
 static enum led_brightness get_casper_backlight_brightness(struct led_classdev
 							   *led_cdev)
 {
@@ -433,6 +538,10 @@ static int casper_wmi_probe(struct wmi_device *wdev, const void *context)
 	acpi_status result = led_classdev_register(&wdev->dev, &casper_kbd_led);
 	if (result != 0)
 		return -ENODEV;
+
+	// Not fatal: keyboard leds and hwmon keep working without it.
+	if (devm_led_classdev_multicolor_register(&wdev->dev, &casper_corner_led))
+		dev_warn(&wdev->dev, "Couldn't register corner leds\n");
 
 	return PTR_ERR_OR_ZERO(hwmon_dev);
 }

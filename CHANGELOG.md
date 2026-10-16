@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased
+
+- **Sürücü**: casper-wmi fork'u 1.2.0'a yükseltildi; `install.sh` eski
+  1.1.0 DKMS kaydını kaldırıp yenisini kuruyor (aynı sürüm numarasıyla DKMS
+  eski modülü yerinde bırakırdı).
+- **Özellik**: Köşe/kenar şerit LED'leri (bölge `0x07`) artık ayrı bir
+  multicolor LED aygıtı: `casper::corner_backlight` (`brightness` 0/1 +
+  `multi_intensity` R G B). `led_control` üzerinden yapılan bölge 7
+  yazmaları da bu aygıtın durumuna yansıyor.
+- **Özellik**: Aydınlatma sayfasında "Köşe LED'leri" kartı (hazır renkler,
+  özel renk, hex, aç/kapa); klavye önizlemesi köşe rengini çerçeve olarak
+  gösteriyor. CLI: `--set-led corner 00FF00`. Köşe durumu profillere ve
+  açılışta geri yüklemeye dahil.
+- **Düzeltme**: Köşe LED'leri kapalıyken EC ilk komutu yutuyor; sürücü
+  (ve eski sürücüde uygulama) açarken komutu 150 ms arayla iki kez gönderiyor.
+  EXCALIBUR G900'de doğrulandı.
+- **Düzeltme**: `priv-write-helper` efekt nibble'ı taşıyan LED komutlarını
+  reddediyordu (polkit yolunda efektler çalışmıyordu); bölge 7 de kabul ediliyor.
+- **Düzeltme**: LED backend'de eksik `subprocess` importu (polkit yolunda
+  `NameError`) ve son efektin hiç geri yüklenmemesi.
+
 ## 1.1.0 (2026-08-24)
 
 - **Özellik**: Çift sürücü desteği — uygulama artık hem klasik `led_control`

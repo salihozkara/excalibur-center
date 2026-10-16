@@ -13,7 +13,7 @@ sudo systemctl disable --now excalibur-center-restore.service 2>/dev/null || tru
 sudo rm -f /lib/systemd/system/excalibur-center-restore.service
 sudo systemctl daemon-reload
 
-for ver in 1.0.0 1.1.0; do
+for ver in 1.0.0 1.1.0 1.2.0; do
     sudo dkms remove casper-wmi/$ver --all >/dev/null 2>&1 || true
 done
 sudo rmmod casper_wmi 2>/dev/null || true

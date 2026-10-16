@@ -28,7 +28,10 @@ PRESETS: list[str] = [
     "7B00FF", "FF00C8", "FF6B9E", "C0C8D4",
 ]
 
-ZONE_KEYS = {3: "zone.left", 4: "zone.center", 5: "zone.right", 6: "zone.all"}
+ZONE_KEYS = {
+    int(Zone.LEFT): "zone.left", int(Zone.CENTER): "zone.center",
+    int(Zone.RIGHT): "zone.right", int(Zone.ALL): "zone.all",
+}
 BRI_KEYS = {0: "bri.off", 1: "bri.mid", 2: "bri.max"}
 EFFECT_KEYS = {
     1: "effect.normal", 2: "effect.blink", 3: "effect.fade",
@@ -63,7 +66,7 @@ class LightingPage(QWidget):
         zone_row = QHBoxLayout()
         zone_row.setSpacing(8)
         self.zone_buttons: dict[int, QPushButton] = {}
-        for code in (3, 4, 5, 6):
+        for code in (int(Zone.LEFT), int(Zone.CENTER), int(Zone.RIGHT), int(Zone.ALL)):
             btn = QPushButton(t(ZONE_KEYS[code]))
             btn.setCheckable(True)
             btn.setObjectName("brightnessChip")
@@ -146,9 +149,69 @@ class LightingPage(QWidget):
         eff_row.addStretch()
         root.addLayout(eff_row)
 
+        # ── corner leds ──────────────────────────────────────
+        self.corner_frame: QFrame | None = None
+        if self.led.has_corner:
+            root.addWidget(self._build_corner_card())
+
         root.addStretch()
 
         self.sync_from_backend()
+
+    def _build_corner_card(self) -> QFrame:
+        frame = QFrame()
+        frame.setObjectName("card")
+        box = QVBoxLayout(frame)
+        box.setContentsMargins(16, 16, 16, 16)
+        box.setSpacing(12)
+
+        title = QLabel(t("corner.title"))
+        title.setObjectName("cardTitle")
+        box.addWidget(title)
+
+        preset_row = QHBoxLayout()
+        preset_row.setSpacing(8)
+        for hex_color in PRESETS:
+            swatch = QPushButton()
+            swatch.setFixedSize(24, 24)
+            swatch.setCursor(Qt.CursorShape.PointingHandCursor)
+            swatch.setToolTip(f"#{hex_color}")
+            swatch.setStyleSheet(
+                f"background-color: #{hex_color}; border: 1px solid #343a46;"
+                "border-radius: 6px; min-width: 24px; max-width: 24px;"
+                "min-height: 24px; max-height: 24px; padding: 0px;"
+            )
+            swatch.clicked.connect(lambda _=False, hx=hex_color: self.apply_corner_color(hx))
+            preset_row.addWidget(swatch)
+        preset_row.addStretch()
+        box.addLayout(preset_row)
+
+        ctrl_row = QHBoxLayout()
+        ctrl_row.setSpacing(10)
+        self.corner_swatch = QPushButton()
+        self.corner_swatch.setFixedSize(34, 34)
+        self.corner_swatch.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.corner_swatch.setToolTip(t("lighting.custom"))
+        self.corner_swatch.clicked.connect(self._pick_corner_custom)
+        ctrl_row.addWidget(self.corner_swatch)
+
+        ctrl_row.addWidget(QLabel(t("lighting.hex")))
+        self.corner_hex = QLineEdit()
+        self.corner_hex.setPlaceholderText("#FF8800")
+        self.corner_hex.setFixedWidth(110)
+        self.corner_hex.returnPressed.connect(self._apply_corner_hex_field)
+        ctrl_row.addWidget(self.corner_hex)
+        # corner leds are on/off only, so there is no brightness row here
+        ctrl_row.addStretch()
+
+        self.corner_power_btn = QPushButton()
+        self.corner_power_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.corner_power_btn.clicked.connect(self.toggle_corner)
+        ctrl_row.addWidget(self.corner_power_btn)
+        box.addLayout(ctrl_row)
+
+        self.corner_frame = frame
+        return frame
 
     # ── helpers ──────────────────────────────────────────────
     def _current_color(self) -> RGBColor:
@@ -187,6 +250,25 @@ class LightingPage(QWidget):
         for value, btn in self.bri_buttons.items():
             btn.setChecked(value == bri)
         self._sync_power_btn()
+        self._sync_corner()
+
+    def _sync_corner(self) -> None:
+        if self.corner_frame is None:
+            return
+        hex_color = self.led.state[int(Zone.CORNER)][1]
+        self.corner_hex.setText(f"#{hex_color}")
+        self.corner_swatch.setStyleSheet(
+            f"background-color: #{hex_color}; border: 1px solid #343a46;"
+            "border-radius: 8px; padding: 0px;"
+        )
+        if self.led.corner_on:
+            self.corner_power_btn.setText(t("corner.turn_off"))
+            self.corner_power_btn.setObjectName("dangerButton")
+        else:
+            self.corner_power_btn.setText(t("corner.turn_on"))
+            self.corner_power_btn.setObjectName("accentButton")
+        self.corner_power_btn.style().unpolish(self.corner_power_btn)
+        self.corner_power_btn.style().polish(self.corner_power_btn)
 
     def _sync_power_btn(self) -> None:
         if self.led.lights_on:
@@ -271,6 +353,41 @@ class LightingPage(QWidget):
         self.pm.set_last_state(self.led.snapshot(), effect=code)
         self._sync_effects()
         self.set_status("✔ " + t("status.effect", name=t(EFFECT_KEYS[code])))
+
+    def apply_corner_color(self, hex_color: str) -> None:
+        try:
+            color = RGBColor.from_hex(hex_color)
+        except ValueError as exc:
+            self.set_status("✖ " + t("status.invalid_color", error=str(exc)), error=True)
+            return
+        # picking a colour while the corner leds are off switches them on
+        try:
+            self.led.apply_zone(Zone.CORNER, color, int(Brightness.MAX))
+        except Exception as exc:  # noqa: BLE001
+            self.set_status("✖ " + t("status.apply_failed", error=str(exc)), error=True)
+            return
+        self._after_apply(t("status.applied", zone=t("zone.corner"), color=color.to_hex()))
+
+    def _apply_corner_hex_field(self) -> None:
+        text = self.corner_hex.text().strip().lstrip("#").upper()
+        if len(text) == 3:
+            text = "".join(c * 2 for c in text)
+        self.apply_corner_color(text)
+
+    def _pick_corner_custom(self) -> None:
+        initial = QColor(f"#{self.led.state[int(Zone.CORNER)][1]}")
+        chosen = QColorDialog.getColor(initial, self, t("corner.title"))
+        if chosen.isValid():
+            self.apply_corner_color(chosen.name()[1:].upper())
+
+    def toggle_corner(self) -> None:
+        turn_on = not self.led.corner_on
+        try:
+            self.led.set_corner(turn_on)
+        except Exception as exc:  # noqa: BLE001
+            self.set_status("✖ " + t("status.toggle_failed", error=str(exc)), error=True)
+            return
+        self._after_apply(t("status.corner_on" if turn_on else "status.corner_off"))
 
     def _after_apply(self, message: str) -> None:
         self._refresh_preview()
